@@ -205,26 +205,36 @@ function run(){
 function drawPop(pop,pm,pv,h0m){
   if(PC)PC.destroy();
   const bins=makeBins(pop,60);
-  const labels=bins.map(b=>b.x.toFixed(2));
-  const dens=bins.map(b=>b.dens);
-  const curve=bins.map(b=>normPDF(b.x,pm,Math.sqrt(pv)));
+  const bw=bins[0].w;
+  const barData=bins.map(b=>({x:b.x,y:b.dens}));
+  const lo=bins[0].x-bw*2, hi=bins[bins.length-1].x+bw*2;
+  const curveData=[];
+  for(let i=0;i<=300;i++){const xv=lo+i*(hi-lo)/300;curveData.push({x:xv,y:normPDF(xv,pm,Math.sqrt(pv))});}
   PC=new Chart(document.getElementById('popC'),{
     type:'bar',
-    data:{labels,datasets:[
-      {label:'Densidad',data:dens,backgroundColor:'rgba(127,119,221,.5)',borderWidth:0,order:2},
-      {label:'Curva',data:curve,type:'line',borderColor:'#EF9F27',borderWidth:2,pointRadius:0,tension:.3,fill:false,order:1}
+    data:{datasets:[
+      {label:'Densidad',data:barData,backgroundColor:'rgba(127,119,221,.5)',borderWidth:0,order:2,barPercentage:1,categoryPercentage:1,parsing:false},
+      {label:'Curva',data:curveData,type:'line',borderColor:'#EF9F27',borderWidth:2,pointRadius:0,tension:.3,fill:false,order:1,parsing:false}
     ]},
     options:{responsive:true,maintainAspectRatio:false,animation:{duration:400},
       plugins:{legend:{display:false}},
       scales:{
-        x:{grid:{color:gridCol()},ticks:{color:'#888',font:{size:10},maxTicksLimit:10},barPercentage:1,categoryPercentage:1},
+        x:{type:'linear',grid:{color:gridCol()},ticks:{color:'#888',font:{size:10},maxTicksLimit:10}},
         y:{grid:{color:gridCol()},ticks:{color:'#888',font:{size:10}},title:{display:true,text:'Densidad',color:'#888',font:{size:11}}}
       }
     },
-    plugins:[vlinePlugin([
-      {val:pm,label:'μ real',color:'#1D9E75',dash:false},
-      {val:h0m,label:'μ₀',color:'#E24B4A',dash:true}
-    ],bins.map(b=>b.x))]
+    plugins:[{id:'vl',afterDraw(chart){
+      const{ctx,chartArea:{top,bottom},scales:{x}}=chart;
+      ctx.save();
+      [[pm,'μ real','#1D9E75',false],[h0m,'μ₀','#E24B4A',true]].forEach(([val,lbl,col,dash])=>{
+        const px=x.getPixelForValue(val);
+        ctx.strokeStyle=col;ctx.lineWidth=2;ctx.setLineDash(dash?[5,4]:[]);
+        ctx.beginPath();ctx.moveTo(px,top);ctx.lineTo(px,bottom);ctx.stroke();
+        ctx.setLineDash([]);ctx.fillStyle=col;ctx.font='500 11px system-ui';
+        ctx.fillText(lbl,px+4,top+13);
+      });
+      ctx.restore();
+    }}]
   });
 }
 
@@ -355,11 +365,13 @@ function drawSampVar(samples,n,h0v,alpha){
 function vlinePlugin(lines,xs){
   return{id:'vl',afterDraw(chart){
     const{ctx,chartArea:{top,bottom},scales:{x}}=chart;
-    const nearest=v=>xs.reduce((b,xv,i)=>Math.abs(xv-v)<Math.abs(xs[b]-v)?i:b,0);
     ctx.save();
+    const n=xs.length;
+    const p0=x.getPixelForTick(0), p1=x.getPixelForTick(n-1);
+    const xMin=xs[0], xMax=xs[n-1];
     lines.forEach(({val,label,color,dash})=>{
-      const i=nearest(val);
-      const px=x.getPixelForTick?x.getPixelForTick(i):x.getPixelForValue(i);
+      const frac=(val-xMin)/(xMax-xMin);
+      const px=p0+frac*(p1-p0);
       ctx.strokeStyle=color;ctx.lineWidth=2;ctx.setLineDash(dash?[5,4]:[]);
       ctx.beginPath();ctx.moveTo(px,top);ctx.lineTo(px,bottom);ctx.stroke();
       ctx.setLineDash([]);ctx.fillStyle=color;ctx.font='500 11px system-ui';
